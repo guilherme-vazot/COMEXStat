@@ -1,0 +1,15 @@
+services:
+  comexstat:
+    build: .
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/app/data
+      - ./db:/app/db
+
+  pipeline:
+    build: .
+    volumes:
+      - ./data:/app/data
+      - ./db:/app/db
+    entrypoint: ["python", "pipeline.py"]
