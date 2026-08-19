@@ -11,19 +11,28 @@ fonte: https://www.gov.br/mdic/pt-br/assuntos/comercio-exterior/estatisticas/bas
 COMEXStat/
 ├── download.py          # Modulo de download dos CSVs
 ├── pipeline.py          # Pipeline: download + ingestao no banco
+├── entrypoint.sh        # Entry point do Docker (Jupyter ou Pipeline)
 ├── Dockerfile           # Container Jupyter + dependencias
 ├── docker-compose.yml   # Orquestracao do container
 ├── requirements.txt     # Dependencias Python
+├── tutorial.ipynb       # Notebook de consultas com DuckDB + pandas
+├── developer_agent.md   # Contexto do projeto para agentes
 ├── data/                # CSVs baixados (gerado automaticamente)
 │   ├── EXP_2023.csv
-│   ├── EXP_2024.csv
-│   ├── ...
-│   └── tabelas/         # Tabelas de referencia
-│       ├── NCM.csv
-│       ├── NCM_SH.csv
-│       ├── NCM_CUCI.csv
-│       ├── NCM_ISIC.csv
-│       └── NCM_CGCE.csv
+│   ├── IMP_2023.csv
+│   └── ...
+├── tabelas/             # Tabelas de referencia (gerado automaticamente)
+│   ├── NCM.csv
+│   ├── NCM_SH.csv
+│   ├── NCM_CUCI.csv
+│   ├── NCM_ISIC.csv
+│   ├── NCM_CGCE.csv
+│   ├── PAIS.csv
+│   ├── PAIS_BLOCO.csv
+│   ├── UF.csv
+│   ├── UF_MUN.csv
+│   ├── VIA.csv
+│   └── URF.csv
 └── db/                  # Banco de dados (gerado automaticamente)
     ├── comexstat.db     # SQLite
     └── comexstat.duckdb # DuckDB
@@ -37,14 +46,14 @@ COMEXStat/
 
 ```bash
 # Clonar o repositorio
-git clone <url-do-repo>
+git clone https://github.com/guilherme-vazot/COMEXStat.git
 cd COMEXStat
 
 # Instalar dependencias
 pip install -r requirements.txt
 ```
 
-### Opcao B: Docker (recomendado para reprodutibilidade)
+### Opcao B: Docker (recomendado)
 
 ```bash
 # Instalar Docker (Ubuntu/Debian)
@@ -55,7 +64,7 @@ sudo usermod -aG docker $USER
 # Build e executar
 cd COMEXStat
 docker compose build
-docker compose up
+docker compose up comexstat
 # Acessar http://localhost:8888
 ```
 
@@ -82,14 +91,14 @@ python pipeline.py -s 2023 -e 2025 -t imp
 ### 3.2 Com tabelas de referencia
 
 ```bash
-# Dados + tabelas de referencia (NCM, SH, CUCI, ISIC, CGCE)
+# Dados + tabelas de referencia (NCM, SH, CUCI, ISIC, CGCE, PAIS, UF, VIA, etc.)
 python pipeline.py -s 2023 -e 2025 --tables
 
 # Dados + tabelas, DuckDB
 python pipeline.py -s 2023 -e 2025 -E duckdb --tables
 ```
 
-### 3.3 Só download (sem ingestao)
+### 3.3 So download (sem ingestao)
 
 ```bash
 # Apenas baixar CSVs, sem salvar no banco
@@ -147,18 +156,17 @@ Schema das tabelas `exp` e `imp`:
 
 | Coluna | Tipo | Descricao |
 |--------|------|-----------|
-| `id` | INTEGER | Chave primaria (autoincrement, so SQLite) |
 | `CO_ANO` | INTEGER | Ano |
 | `CO_MES` | INTEGER | Mes |
-| `CO_NCM` | TEXT/VARCHAR | Codigo NCM |
+| `CO_NCM` | VARCHAR | Codigo NCM |
 | `CO_UNID` | INTEGER | Codigo da unidade |
 | `CO_PAIS` | INTEGER | Codigo do pais |
-| `SG_UF_NCM` | TEXT/VARCHAR | Sigla da UF |
+| `SG_UF_NCM` | VARCHAR | Sigla da UF |
 | `CO_VIA` | INTEGER | Codigo da via |
-| `CO_URF` | TEXT/VARCHAR | Codigo da URF |
-| `QT_ESTAT` | REAL/DOUBLE | Quantidade estatistica |
-| `KG_LIQUIDO` | REAL/DOUBLE | Peso liquido (kg) |
-| `VL_FOB` | REAL/DOUBLE | Valor FOB (USD) |
+| `CO_URF` | VARCHAR | Codigo da URF |
+| `QT_ESTAT` | DOUBLE | Quantidade estatistica |
+| `KG_LIQUIDO` | DOUBLE | Peso liquido (kg) |
+| `VL_FOB` | DOUBLE | Valor FOB (USD) |
 | `file_year` | INTEGER | Ano do arquivo original |
 
 ### 5.2 Tabelas de referencia
@@ -170,6 +178,12 @@ Schema das tabelas `exp` e `imp`:
 | `ncm_cuci` | ~2.900 | NCM x CUCI |
 | `ncm_isic` | ~420 | NCM x ISIC |
 | `ncm_cgce` | ~19 | NCM x CGCE |
+| `pais` | 281 | Paises (codigo, nome PT/EN/ES) |
+| `pais_bloco` | 324 | Pais x bloco economico |
+| `uf` | 34 | Unidades federativas |
+| `uf_mun` | 5.570 | Municipios |
+| `via` | 17 | Vias de transporte |
+| `urf` | 281 | Unidades da Receita Federal |
 
 ### 5.3 Escolha do engine
 
@@ -186,34 +200,7 @@ Schema das tabelas `exp` e `imp`:
 
 ## 6. Exemplos de Consultas
 
-### 6.1 SQLite
-
-```python
-import sqlite3
-import pandas as pd
-
-conn = sqlite3.connect("db/comexstat.db")
-
-# Total por ano
-df = pd.read_sql("""
-    SELECT CO_ANO, SUM(VL_FOB) as total_fob
-    FROM exp
-    GROUP BY CO_ANO
-    ORDER BY CO_ANO
-""", conn)
-
-# Top 10 UFS por exportacao
-df = pd.read_sql("""
-    SELECT SG_UF_NCM, SUM(VL_FOB) as total_fob
-    FROM exp
-    WHERE CO_ANO = 2024
-    GROUP BY SG_UF_NCM
-    ORDER BY total_fob DESC
-    LIMIT 10
-""", conn)
-```
-
-### 6.2 DuckDB
+### 6.1 DuckDB
 
 ```python
 import duckdb
@@ -226,9 +213,9 @@ df = conn.execute("""
     FROM exp
     GROUP BY CO_ANO
     ORDER BY CO_ANO
-""").fetchdf()
+""").df()
 
-# Top 10 UFS por exportacao
+# Top 10 UFs por exportacao
 df = conn.execute("""
     SELECT SG_UF_NCM, SUM(VL_FOB) as total_fob
     FROM exp
@@ -236,30 +223,25 @@ df = conn.execute("""
     GROUP BY SG_UF_NCM
     ORDER BY total_fob DESC
     LIMIT 10
-""").fetchdf()
+""").df()
 ```
 
-### 6.3 JOIN com tabelas de referencia
+### 6.2 JOIN com tabelas de referencia
 
 ```python
-import duckdb
-
-conn = duckdb.connect("db/comexstat.duckdb")
-
 # Exportacao com descricao NCM
 df = conn.execute("""
     SELECT
         e.CO_ANO,
         e.CO_NCM,
         n.NO_NCM_POR as descricao,
-        n.CO_SH6,
         e.VL_FOB
     FROM exp e
-    JOIN ncm n ON e.CO_NCM = n.CO_NCM
+    LEFT JOIN ncm n ON e.CO_NCM = n.CO_NCM
     WHERE e.CO_ANO = 2024
     ORDER BY e.VL_FOB DESC
     LIMIT 20
-""").fetchdf()
+""").df()
 
 # Exportacao por secao SH
 df = conn.execute("""
@@ -267,12 +249,41 @@ df = conn.execute("""
         sh.NO_SEC_POR as secao,
         SUM(e.VL_FOB) as total_fob
     FROM exp e
-    JOIN ncm n ON e.CO_NCM = n.CO_NCM
-    JOIN ncm_sh sh ON n.CO_SH6 = sh.CO_SH6
+    LEFT JOIN ncm n ON e.CO_NCM = n.CO_NCM
+    LEFT JOIN ncm_sh sh ON n.CO_SH6 = sh.CO_SH6
     WHERE e.CO_ANO = 2024
     GROUP BY sh.NO_SEC_POR
     ORDER BY total_fob DESC
-""").fetchdf()
+""").df()
+```
+
+### 6.3 JOIN com pais e via
+
+```python
+# Top parceiros comerciais
+df = conn.execute("""
+    SELECT
+        p.NO_PAIS AS pais,
+        SUM(e.VL_FOB) AS total_fob
+    FROM exp e
+    LEFT JOIN pais p ON e.CO_PAIS = p.CO_PAIS
+    WHERE e.CO_ANO = 2024
+    GROUP BY p.NO_PAIS
+    ORDER BY total_fob DESC
+    LIMIT 10
+""").df()
+
+# Exportacao por via de transporte
+df = conn.execute("""
+    SELECT
+        v.NO_VIA AS via,
+        SUM(e.VL_FOB) AS total_fob
+    FROM exp e
+    LEFT JOIN via v ON e.CO_VIA = v.CO_VIA
+    WHERE e.CO_ANO = 2024
+    GROUP BY v.NO_VIA
+    ORDER BY total_fob DESC
+""").df()
 ```
 
 ### 6.4 DuckDB lendo CSV direto (sem pipeline)
@@ -286,13 +297,7 @@ conn = duckdb.connect()
 df = conn.execute("""
     SELECT * FROM read_csv_auto('./data/EXP_2025.csv', delim=';', header=true)
     LIMIT 10
-""").fetchdf()
-
-# Salvar no banco
-conn.execute("""
-    CREATE TABLE exp AS
-    SELECT * FROM read_csv_auto('./data/EXP_2025.csv', delim=';', header=true)
-""")
+""").df()
 ```
 
 ---
@@ -313,7 +318,7 @@ df = conn.execute("""
     WHERE CO_ANO = 2024
     GROUP BY CO_MES
     ORDER BY CO_MES
-""").fetchdf()
+""").df()
 
 plt.figure(figsize=(10, 6))
 plt.bar(df["CO_MES"], df["total_fob"] / 1e9)
@@ -322,13 +327,12 @@ plt.ylabel("Valor FOB (bilhoes USD)")
 plt.title("Exportacoes Brasileiras - 2024")
 plt.xticks(range(1, 13))
 plt.tight_layout()
-plt.savefig("exportacoes_2024.png")
 plt.show()
 ```
 
 ---
 
-## 8. Uso como Modulo (Pipeline)
+## 8. Uso como Modulo
 
 ### Funcoes disponiveis
 
@@ -342,7 +346,6 @@ from pipeline import run_pipeline, init_db, ingest_csv, ingest_tables
 ```python
 from pipeline import run_pipeline
 
-# Download + ingestao completo
 results = run_pipeline(
     start=2020,
     end=2025,
@@ -353,31 +356,6 @@ results = run_pipeline(
     verbose=True,
     include_tables=True,
 )
-
-print(results["ingested"])
-# {"EXP_2020.csv": 1500000, "EXP_2021.csv": 1600000, ...}
-```
-
-### Exemplo: so baixar CSVs
-
-```python
-from download import download_comexstat
-
-results = download_comexstat(
-    start=2023,
-    end=2025,
-    types=["EXP", "IMP"],
-    output_dir="./data",
-    verbose=True,
-)
-```
-
-### Exemplo: so tabelas de referencia
-
-```python
-from download import download_tables
-
-results = download_tables(output_dir="./data/tabelas")
 ```
 
 ---
@@ -387,26 +365,20 @@ results = download_tables(output_dir="./data/tabelas")
 ### Comandos
 
 ```bash
-# Build da imagem
-docker compose build
-
-# Executar (Jupyter)
-docker compose up
+# Jupyter (padrao)
+docker compose up comexstat
 # Acessar http://localhost:8888
 
-# Executar pipeline no container
-docker compose run comexstat python pipeline.py -s 2023 -e 2025
+# Pipeline
+docker compose run pipeline --start 2023 --end 2026 --type both --engine duckdb --tables
 
-# Executar com DuckDB
-docker compose run comexstat python pipeline.py -s 2023 -e 2025 -E duckdb
-
-# Executar com tabelas de referencia
-docker compose run comexstat python pipeline.py -s 2023 -e 2025 --tables
+# Shell interativo
+docker compose run --entrypoint bash comexstat
 ```
 
 ### Persistencia
 
-Os volumes `./data` e `./db` sao montados no container, entao:
+Os volumes `./data` e `./db` sao montados no container:
 - CSVs baixados persistem entre execucoes
 - Banco de dados persiste entre execucoes
 
@@ -423,6 +395,12 @@ Os volumes `./data` e `./db` sao montados no container, entao:
 | `balanca.mdic.gov.br/balanca/bd/tabelas/NCM_CUCI.csv` | NCM x CUCI |
 | `balanca.mdic.gov.br/balanca/bd/tabelas/NCM_ISIC.csv` | NCM x ISIC |
 | `balanca.mdic.gov.br/balanca/bd/tabelas/NCM_CGCE.csv` | NCM x CGCE |
+| `balanca.mdic.gov.br/balanca/bd/tabelas/PAIS.csv` | Paises |
+| `balanca.mdic.gov.br/balanca/bd/tabelas/PAIS_BLOCO.csv` | Paises x Blocos |
+| `balanca.mdic.gov.br/balanca/bd/tabelas/UF.csv` | Unidades Federativas |
+| `balanca.mdic.gov.br/balanca/bd/tabelas/UF_MUN.csv` | Municipios |
+| `balanca.mdic.gov.br/balanca/bd/tabelas/VIA.csv` | Vias de Transporte |
+| `balanca.mdic.gov.br/balanca/bd/tabelas/URF.csv` | Unidades da RF |
 
 ---
 
