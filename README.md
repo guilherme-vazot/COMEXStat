@@ -10,6 +10,9 @@ docker compose build
 docker compose up comexstat
 # Acessar http://localhost:8888
 
+# Docker pipeline (baixa dados + ingeri no banco)
+docker compose run pipeline --start 2023 --end 2026 --type both --engine duckdb --tables
+
 # Local
 pip install -r requirements.txt
 python pipeline.py -s 2023 -e 2026 -E duckdb --tables
